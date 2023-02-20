@@ -1,0 +1,35 @@
+pipeline {
+    agent any
+    
+    environment {
+        SERVICE_ACCOUNT_KEY = credentials('service-account-key-id')
+        PROJECT_ID = "project-id"
+    }
+    
+    stages {
+        stage('Stop Dataflow Jobs') {
+            steps {
+                sh "gcloud auth activate-service-account --key-file=${SERVICE_ACCOUNT_KEY}"
+                script {
+                    def oneDayAgo = sh(
+                        script: "date -d '-1 day' +'%Y-%m-%d %H:%M:%S'",
+                        returnStdout: true
+                    ).trim()
+                    def jobList = sh(
+                        script: "gcloud dataflow jobs list --project=$PROJECT_ID --status=running --format='value(JOB_ID,NAME,CREATED_AT)'",
+                        returnStdout: true
+                    ).trim()
+                    jobList.readLines().each { line ->
+                        def jobInfo = line.split()
+                        def jobId = jobInfo[0]
+                        def jobName = jobInfo[1]
+                        def jobCreatedAt = jobInfo[2]
+                        if (jobCreatedAt <= oneDayAgo && jobName.startsWith("prefix-to-identify-jobs")) {
+                            sh "gcloud dataflow jobs cancel $jobId --project=$PROJECT_ID"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
